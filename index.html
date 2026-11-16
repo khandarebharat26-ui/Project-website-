@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UPI Fraud Awareness Assistant</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+  }
+  .container {
+    width: 100%;
+    max-width: 520px;
+    background: #1a1a2e;
+    border-radius: 20px;
+    box-shadow: 0 25px 60px rgba(0,0,0,.5);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 85vh;
+  }
+  .header {
+    background: linear-gradient(90deg, #e94560, #533483);
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .header .icon { font-size: 28px; }
+  .header h1 { font-size: 16px; color: #fff; font-weight: 600; }
+  .header p { font-size: 11px; color: rgba(255,255,255,.7); }
+  .chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .msg {
+    max-width: 85%;
+    padding: 12px 16px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+    animation: fadeIn .3s ease;
+    white-space: pre-wrap;
+  }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+  .msg.bot {
+    background: #16213e;
+    border: 1px solid #0f3460;
+    border-bottom-left-radius: 4px;
+    align-self: flex-start;
+    color: #e0e0e0;
+  }
+  .msg.user {
+    background: linear-gradient(135deg, #e94560, #c23152);
+    border-bottom-right-radius: 4px;
+    align-self: flex-end;
+    color: #fff;
+  }
+  .msg .risk-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 13px;
+    margin-bottom: 8px;
+  }
+  .risk-0 { background: #1b5e20; color: #a5d6a7; }
+  .risk-1 { background: #f57f17; color: #fff9c4; }
+  .risk-2 { background: #e65100; color: #ffe0b2; }
+  .risk-3 { background: #b71c1c; color: #ffcdd2; }
+  .msg .actions { margin-top: 10px; padding-left: 18px; }
+  .msg .actions li { margin-bottom: 4px; font-size: 13px; }
+  .msg .emergency {
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(233,69,96,.1);
+    border: 1px solid rgba(233,69,96,.3);
+    border-radius: 10px;
+    font-size: 12px;
+    color: #ffab91;
+  }
+  .input-area {
+    padding: 16px 20px;
+    background: #16213e;
+    display: flex;
+    gap: 10px;
+    border-top: 1px solid #0f3460;
+  }
+  .input-area input {
+    flex: 1;
+    padding: 12px 16px;
+    border-radius: 25px;
+    border: 1px solid #0f3460;
+    background: #1a1a2e;
+    color: #fff;
+    font-size: 14px;
+    outline: none;
+  }
+  .input-area input:focus { border-color: #e94560; }
+  .input-area button {
+    padding: 12px 22px;
+    border-radius: 25px;
+    border: none;
+    background: linear-gradient(135deg, #e94560, #533483);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform .15s;
+  }
+  .input-area button:hover { transform: scale(1.05); }
+  .input-area button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+  .typing {
+    display: flex;
+    gap: 4px;
+    padding: 12px 16px;
+  }
+  .typing span {
+    width: 8px; height: 8px;
+    background: #e94560;
+    border-radius: 50%;
+    animation: bounce .6s infinite alternate;
+  }
+  .typing span:nth-child(2) { animation-delay: .2s; }
+  .typing span:nth-child(3) { animation-delay: .4s; }
+  @keyframes bounce { to { transform: translateY(-6px); } }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="icon">🛡️</div>
+    <div>
+      <h1>UPI Fraud Awareness Assistant</h1>
+      <p>Describe → Ask → Analyse → Verdict</p>
+    </div>
+  </div>
+  <div class="chat" id="chat"></div>
+  <div class="input-area">
+    <input type="text" id="userInput" placeholder="Type your answer…" autocomplete="off">
+    <button id="sendBtn" onclick="send()">Send</button>
+  </div>
+</div>
+
+<script>
+const chat = document.getElementById('chat');
+const input = document.getElementById('userInput');
+const btn = document.getElementById('sendBtn');
+
+let step = 0;
+let situation = '';
+let answers = {};
+
+const QUESTIONS = [
+  { key: 'who',    text: 'Who contacted you? (bank, friend, unknown number, online ad…)' },
+  { key: 'action', text: 'What did they ask you to do? (send money, share OTP, scan QR, click link…)' },
+  { key: 'otp',    text: 'Did you share or were you asked for OTP / PIN? (yes / no)' },
+  { key: 'sent',   text: 'Have you already sent money? (yes / no)' },
+  { key: 'urgent', text: 'Were you given time pressure or a threat? (yes / no)' },
+];
+
+function addMsg(role, content) {
+  const div = document.createElement('div');
+  div.className = `msg ${role}`;
+  div.innerHTML = content;
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function showTyping() {
+  const div = document.createElement('div');
+  div.className = 'msg bot typing';
+  div.id = 'typing';
+  div.innerHTML = '<span></span><span></span><span></span>';
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function removeTyping() {
+  const t = document.getElementById('typing');
+  if (t) t.remove();
+}
+
+function botSay(content, delay = 600) {
+  showTyping();
+  setTimeout(() => {
+    removeTyping();
+    addMsg('bot', content);
+  }, delay);
+}
+
+function analyse() {
+  const text = (situation + ' ' + Object.values(answers).join(' ')).toLowerCase();
+  const sig = {
+    otp_shared:         text.includes('otp') || text.includes('one time password') || text.includes('pin') || text.includes('cvv'),
+    money_sent:         text.includes('sent money') || text.includes('transferred') || text.includes('paid') || text.includes('already paid') || text.includes('yes'),
+    unknown_number:     text.includes('unknown') || text.includes('stranger') || text.includes('random') || text.includes("didn't know") || text.includes("never heard"),
+    bank_impersonation: text.includes('bank') || text.includes('rbi') || text.includes('npci') || text.includes('official') || text.includes('support') || text.includes('helpdesk') || text.includes('customer care'),
+    urgent_pressure:    text.includes('immediately') || text.includes('urgent') || text.includes('within minutes') || text.includes('block') || text.includes('suspend') || text.includes('last chance') || text.includes('yes'),
+    qr_code:            text.includes('qr') || text.includes('scan'),
+    link_clicked:       text.includes('link') || text.includes('clicked') || text.includes('website') || text.includes('url') || text.includes('phishing'),
+    refund_offer:       text.includes('refund') || text.includes('cashback') || text.includes('reward') || text.includes('prize') || text.includes('lottery') || text.includes('winner'),
+    amount_large:       text.includes('lakh') || text.includes('10000') || text.includes('20000') || text.includes('50000') || text.includes('100000'),
+    already_lost:       text.includes('already lost') || text.includes('already sent') || text.includes('money is gone') || text.includes('lost money'),
+    friend_asked:       text.includes('friend') || text.includes('colleague') || text.includes('family') || text.includes('relative') || text.includes('boss'),
+  };
+  const weights = { otp_shared:3, money_sent:2, unknown_number:2, bank_impersonation:2, urgent_pressure:2, qr_code:1, link_clicked:2, refund_offer:2, amount_large:1, already_lost:3, friend_asked:1 };
+  let score = 0;
+  for (const [k, v] of Object.entries(sig)) if (v) score += weights[k];
+
+  if (score >= 8) return {
+    level: 3, title: '🔴 CRITICAL RISK',
+    desc: 'Multiple strong fraud indicators detected. This matches known UPI scam patterns.',
+    actions: ['STOP all further payments immediately', "Call your bank's fraud helpline NOW (number on back of card)", 'Do NOT share any OTP, PIN, or CVV', 'File a complaint on the UPI app used', 'Report to NPCI via 1930 or cybercrime.gov.in', 'Take screenshots of the conversation as evidence']
+  };
+  if (score >= 5) return {
+    level: 2, title: '🟠 HIGH RISK',
+    desc: 'Several fraud indicators present. Treat this as a likely scam.',
+    actions: ['Do NOT make any further payments', "Verify the caller via the bank's official number", 'If money was sent, call your bank to block the transaction', 'File a complaint on the UPI app and cybercrime.gov.in']
+  };
+  if (score >= 3) return {
+    level: 1, title: '🟡 MEDIUM RISK',
+    desc: 'Some suspicious signals detected. Proceed with caution.',
+    actions: ['Verify the identity of the person/entity before paying', 'Do not share OTP or PIN under any circumstances', 'Cross-check on the official bank app or website', 'If in doubt, do not proceed with the transaction']
+  };
+  return {
+    level: 0, title: '🟢 LOW RISK',
+    desc: 'No strong fraud indicators detected in your description.',
+    actions: ['Maintain normal caution — never share OTP/PIN', 'Keep transaction records for reference', 'If uncomfortable, you can always cancel before confirming']
+  };
+}
+
+function showResult() {
+  const r = analyse();
+  const actionsHtml = r.actions.map(a => `<li>${a}</li>`).join('');
+  const html = `
+    <span class="risk-badge risk-${r.level}">${r.title}</span><br>
+    ${r.desc}
+    <div class="actions"><strong>⚡ Recommended actions:</strong><ol>${actionsHtml}</ol></div>
+    <div class="emergency">
+      📞 <strong>Emergency Numbers:</strong><br>
+      • Bank fraud helpline (on your card)<br>
+      • <strong>1930</strong> – NPCI UPI Helpline<br>
+      • <strong>cybercrime.gov.in</strong> – Cyber Crime Portal<br>
+      • <strong>112</strong> – Emergency
+    </div>
+  `;
+  addMsg('bot', html);
+  step = 99; // done
+  input.placeholder = 'Type a new situation to start over…';
+}
+
+function send() {
+  const val = input.value.trim();
+  if (!val) return;
+  addMsg('user', val);
+  input.value = '';
+  btn.disabled = true;
+
+  if (step === 99) {
+    // Reset
+    step = 0; situation = ''; answers = {};
+    chat.innerHTML = '';
+    input.placeholder = 'Describe your situation…';
+    botSay('👋 Welcome back! Describe your new situation in 1–2 sentences.');
+    btn.disabled = false;
+    return;
+  }
+
+  if (step === 0) {
+    situation = val;
+    step = 1;
+    setTimeout(() => { botSay(`**Q1:** ${QUESTIONS[0].text}`); btn.disabled = false; }, 700);
+  } else if (step >= 1 && step <= 5) {
+    answers[QUESTIONS[step - 1].key] = val;
+    step++;
+    if (step <= 5) {
+      setTimeout(() => { botSay(`**Q${step}:** ${QUESTIONS[step - 1].text}`); btn.disabled = false; }, 700);
+    } else {
+      setTimeout(() => {
+        showResult();
+        btn.disabled = false;
+      }, 800);
+    }
+  }
+}
+
+input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+
+// Initial greeting
+botSay('👋 Hi! I\'m your **UPI Fraud Awareness Assistant**.\n\nPlease **describe the situation** in 1–2 sentences.\n\n*Example: "Someone called claiming to be from my bank and asked me to transfer ₹50,000 to a safe account."*');
+</script>
+</body>
+</html>   
